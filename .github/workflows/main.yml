@@ -1,4 +1,4 @@
-name: Build WireGuard Android
+name: Build WireGuard Android (Manual SDK)
 
 on:
   push:
@@ -8,17 +8,18 @@ on:
   workflow_dispatch:
 
 env:
-  # 强制使用 Node.js 24，消除 Node 20 弃用警告
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true   # 避免 Node 20 警告
+  ANDROID_HOME: ${{ github.workspace }}/android-sdk
+  ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code with submodules
+      - name: Checkout repository with submodules
         uses: actions/checkout@v4
         with:
+          path: wireguard-android
           submodules: recursive
 
       - name: Set up JDK 11
@@ -27,34 +28,39 @@ jobs:
           distribution: 'temurin'
           java-version: '11'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          # 修正参数名：accept-android-sdk-licenses
-          accept-android-sdk-licenses: true
-
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+      - name: Install Android SDK (command line)
+        run: |
+          mkdir -p $ANDROID_HOME
+          cd $ANDROID_HOME
+          # 下载 command line tools (最新稳定版)
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q commandlinetools-linux-*.zip
+          rm commandlinetools-linux-*.zip
+          mv cmdline-tools latest
+          mkdir -p latest/cmdline-tools
+          # 实际目录结构要求: cmdline-tools/latest/bin/sdkmanager
+          # 上面 mv 后路径为 $ANDROID_HOME/latest/，需要重构成标准结构
+          mkdir -p $ANDROID_HOME/cmdline-tools
+          mv $ANDROID_HOME/latest $ANDROID_HOME/cmdline-tools/
+          # 设置 PATH
+          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
+          # 自动接受 licenses
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1
+          # 安装必要的平台工具和构建工具
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-30" "build-tools;30.0.3" > /dev/null
 
       - name: Build release APK
-        run: ./gradlew assembleRelease --stacktrace
-
-      - name: List all APK files (debug)
-        if: always()   # 即使构建失败也运行，便于排查
+        working-directory: wireguard-android
         run: |
-          echo "Searching for .apk files:"
-          find . -name "*.apk" -type f
-          echo ""
-          echo "Contents of app/build/outputs/apk/ (if exists):"
-          ls -la app/build/outputs/apk/ || echo "Directory not found"
+          chmod +x gradlew
+          ./gradlew assembleRelease --stacktrace
 
-      - name: Upload APK artifact
-        if: success()   # 只有构建成功才上传
+      - name: Find and upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: wireguard-android-release
-          # 尝试多个可能的 APK 路径
           path: |
-            app/build/outputs/apk/release/*.apk
-            app/build/outputs/apk/*/release/*.apk
-            **/build/outputs/apk/**/*.apk
+            wireguard-android/app/build/outputs/apk/release/*.apk
+            wireguard-android/**/build/outputs/apk/**/*.apk
