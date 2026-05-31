@@ -18,8 +18,17 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleRelease
 
-      - name: Upload APK
+      - name: Find APK files
+        run: |
+          echo "🔍 Searching for all APK files..."
+          find . -name "*.apk" -type f
+          echo "📦 Creating artifact directory..."
+          mkdir -p apk-output
+          find . -name "*.apk" -type f -exec cp {} apk-output/ \;
+          echo "✅ APK files copied to apk-output/"
+
+      - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
           name: wireguard-android-release
-          path: wireguard-android/app/build/outputs/apk/release/*.apk
+          path: apk-output/
