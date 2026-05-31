@@ -1,4 +1,4 @@
-name: Build WireGuard Android (Manual SDK)
+name: Build WireGuard Android
 
 on:
   push:
@@ -7,60 +7,19 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true   # 避免 Node 20 警告
-  ANDROID_HOME: ${{ github.workspace }}/android-sdk
-  ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository with submodules
-        uses: actions/checkout@v4
-        with:
-          path: wireguard-android
-          submodules: recursive
-
-      - name: Set up JDK 11
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '11'
-
-      - name: Install Android SDK (command line)
+      - name: Clone and build
         run: |
-          mkdir -p $ANDROID_HOME
-          cd $ANDROID_HOME
-          # 下载 command line tools (最新稳定版)
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
-          unzip -q commandlinetools-linux-*.zip
-          rm commandlinetools-linux-*.zip
-          mv cmdline-tools latest
-          mkdir -p latest/cmdline-tools
-          # 实际目录结构要求: cmdline-tools/latest/bin/sdkmanager
-          # 上面 mv 后路径为 $ANDROID_HOME/latest/，需要重构成标准结构
-          mkdir -p $ANDROID_HOME/cmdline-tools
-          mv $ANDROID_HOME/latest $ANDROID_HOME/cmdline-tools/
-          # 设置 PATH
-          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> $GITHUB_PATH
-          echo "$ANDROID_HOME/platform-tools" >> $GITHUB_PATH
-          # 自动接受 licenses
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1
-          # 安装必要的平台工具和构建工具
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platform-tools" "platforms;android-30" "build-tools;30.0.3" > /dev/null
-
-      - name: Build release APK
-        working-directory: wireguard-android
-        run: |
+          git clone --recurse-submodules https://git.zx2c4.com/wireguard-android
+          cd wireguard-android
           chmod +x gradlew
-          ./gradlew assembleRelease --stacktrace
+          ./gradlew assembleRelease
 
-      - name: Find and upload APK
-        if: success()
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: wireguard-android-release
-          path: |
-            wireguard-android/app/build/outputs/apk/release/*.apk
-            wireguard-android/**/build/outputs/apk/**/*.apk
+          path: wireguard-android/app/build/outputs/apk/release/*.apk
